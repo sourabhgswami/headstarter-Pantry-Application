@@ -1,5 +1,7 @@
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { firebaseConfig } from "@/firebase";
+import { FirebaseAppProvider } from 'reactfire';
 
 const inter = Inter({ subsets: ["latin"] });
 

@@ -2,6 +2,7 @@
 import next from 'next/image'
 import { useState, useEffect } from 'react'
 import { getFirestore, collection, doc, query, getDocs, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { Box, Modal, Stack, TextField, Typography, Button, Paper, IconButton, Tooltip } from "@mui/material"
 import AddIcon from '@mui/icons-material/Add'
 import RemoveIcon from '@mui/icons-material/Remove'
@@ -10,6 +11,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import { firebaseApp } from '@/firebase'  // Assuming this is how you initialize Firebase in your project
 
 const Firestore = getFirestore(firebaseApp)
+const storage = getStorage(firebaseApp)
 
 const item = [
   'tomato',
@@ -28,6 +30,8 @@ export default function Home() {
   const [open, setOpen] = useState(false)
   const [itemName, setItemName] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const [image, setImage] = useState(null)
+  const [zoomImage, setZoomImage] = useState(null)
 
   const updateInventory = async () => {
     const snapshot = query(collection(Firestore, 'inventory'))
@@ -45,25 +49,55 @@ export default function Home() {
   
 //function to add items to inventory 
 
-const addItem = async(item) => {
+const addItem = async(item, imageFile) => {
   if (!item.trim()) {
     alert("Item name cannot be empty");
     return;
   }
   const docRef = doc(collection(Firestore, 'inventory'), item.trim())
   const docSnap = await getDoc(docRef)
+  
+  let imageUrl = null;
+  if (imageFile) {
+    imageUrl = await uploadImage(imageFile);
+  }
+
   if (docSnap.exists()) {
     const { quantity } = docSnap.data()
     // Check if quantity is a number, if not, set it to 0
     const currentQuantity = isNaN(quantity) ? 0 : quantity
-    await setDoc(docRef, { quantity: currentQuantity + 1 })
+    await setDoc(docRef, { 
+      quantity: currentQuantity + 1,
+      imageUrl: imageUrl || docSnap.data().imageUrl
+    })
   } else {
-    await setDoc(docRef, { quantity: 1 })
+    await setDoc(docRef, { 
+      quantity: 1,
+      imageUrl: imageUrl
+    })
   }
   await updateInventory()
 }
 
-  const removeItem = async(item) => {
+const uploadImage = async (file) => {
+  if (!file) return null;
+  const storageRef = ref(storage, `items/${file.name}`);
+  await uploadBytes(storageRef, file);
+  return await getDownloadURL(storageRef);
+}
+
+const handleAddItem = () => {
+  if (itemName.trim()) {
+    addItem(itemName.trim(), image);
+    setItemName('');
+    setImage(null);
+    handleClose();
+  } else {
+    alert("Item name cannot be empty");
+  }
+}
+
+const removeItem = async(item) => {
     const docRef = doc(collection(Firestore, 'inventory'), item)
     const docSnap = await getDoc(docRef)
     if (docSnap.exists()){
@@ -89,6 +123,51 @@ const addItem = async(item) => {
   const filteredInventory = inventory.filter(item =>
     item.name.toLowerCase().includes(searchTerm.toLowerCase())
   )
+
+  const handleImageChange = (event) => {
+    setImage(event.target.files[0]);
+  };
+
+  const ImageZoomModal = ({ image, onClose }) => (
+    <Modal open={!!image} onClose={onClose}>
+      <Box
+        sx={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          maxWidth: '90vw',
+          maxHeight: '90vh',
+          overflow: 'auto',
+          bgcolor: 'background.paper',
+          boxShadow: 24,
+          p: 2,
+          borderRadius: 2,
+        }}
+      >
+        <IconButton
+          onClick={onClose}
+          sx={{
+            position: 'absolute',
+            right: 8,
+            top: 8,
+            color: 'text.secondary',
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
+        <img
+          src={image}
+          alt="Zoomed item"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain',
+          }}
+        />
+      </Box>
+    </Modal>
+  );
 
   return (
     <Box width="100vw" height="100vh" 
@@ -122,20 +201,34 @@ const addItem = async(item) => {
             onChange={(e) => setItemName(e.target.value)}
             sx={{ mb: 3 }}
           />
+          <input
+            accept="image/*"
+            style={{ display: 'none' }}
+            id="image-upload"
+            type="file"
+            onChange={(e) => setImage(e.target.files[0])}
+          />
+          <label htmlFor="image-upload">
+            <Button
+              variant="outlined"
+              component="span"
+              fullWidth
+              sx={{ mb: 2 }}
+            >
+              {image ? 'Change Image' : 'Add Image (Optional)'}
+            </Button>
+          </label>
+          {image && (
+            <Typography variant="body2" mb={2}>
+              Selected image: {image.name}
+            </Typography>
+          )}
           <Button
             variant='contained'
             color='primary'
             fullWidth
             size="large"
-            onClick={() => {
-              if (itemName.trim()) {
-                addItem(itemName.trim())
-                setItemName('')
-                handleClose()
-              } else {
-                alert("Item name cannot be empty")
-              }
-            }}
+            onClick={handleAddItem}
             sx={{ 
               py: 1.5,
               textTransform: 'none',
@@ -207,9 +300,16 @@ const addItem = async(item) => {
                   },
                 }}
               >
-                <Typography variant='h6' color="text.primary" width="50%">
-                  {item.name.charAt(0).toUpperCase() + item.name.slice(1)}
-                </Typography>
+                <Box display="flex" alignItems="center" width="50%">
+                  {item.imageUrl && (
+                    <Box mr={2} width={50} height={50} overflow="hidden" borderRadius={1} sx={{ cursor: 'pointer' }} onClick={() => setZoomImage(item.imageUrl)}>
+                      <img src={item.imageUrl} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </Box>
+                  )}
+                  <Typography variant='h6' color="text.primary">
+                    {item.name.charAt(0).toUpperCase() + item.name.slice(1)}
+                  </Typography>
+                </Box>
                 <Box display="flex" justifyContent="flex-end" alignItems="center" width="50%">
                   <Typography variant='h6' color="text.secondary" sx={{ width: '80px', textAlign: 'center' }}>
                     {item.quantity}
@@ -230,6 +330,7 @@ const addItem = async(item) => {
           </Stack>
         </Paper>
       </Paper>
+      <ImageZoomModal image={zoomImage} onClose={() => setZoomImage(null)} />
     </Box>
   )
 }

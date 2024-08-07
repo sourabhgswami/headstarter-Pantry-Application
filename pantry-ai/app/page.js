@@ -124,29 +124,28 @@ const addItem = async (item, imageFile, quantity) => {
   let description = null;
 
   if (imageFile) {
-    imageUrl = await uploadImage(imageFile);  // Upload image to Firebase Storage
-    description = await classifyImage(imageFile);  // Generate description for the image
+    imageUrl = await uploadImage(imageFile);
+    description = await classifyImage(imageFile);
   }
 
   if (docSnap.exists()) {
-    const { quantity: existingQuantity } = docSnap.data();
-    const currentQuantity = isNaN(existingQuantity) ? 0 : existingQuantity;
+    const existingData = docSnap.data();
+    const currentQuantity = Number(existingData.quantity) || 0;
     await setDoc(docRef, { 
-      quantity: currentQuantity + quantity,
-      imageUrl: imageUrl || docSnap.data().imageUrl,
-      description: description || docSnap.data().description, // Store the description
+      quantity: currentQuantity + Number(quantity),
+      imageUrl: imageUrl || existingData.imageUrl,
+      description: description || existingData.description,
     });
   } else {
     await setDoc(docRef, { 
-      quantity: quantity,
+      quantity: Number(quantity),
       imageUrl: imageUrl,
-      description: description, // Store the description
+      description: description,
     });
   }
 
   await updateInventory();
 };
-
 
 
 const uploadImage = async (file) => {
@@ -425,7 +424,7 @@ const removeItem = async(item) => {
                       {item.description || 'N/A'}
                     </Typography>
                     <Box sx={{ width: '80px', display: 'flex', justifyContent: 'center' }}>
-                      <IconButton size="small" color='primary' onClick={() => addItem(item.name)}>
+                      <IconButton size="small" color='primary' onClick={() => addItem(item.name, null, 1)}>
                         <AddIcon fontSize="small" />
                       </IconButton>
                       <IconButton size="small" color='primary' onClick={() => removeItem(item.name)}>
